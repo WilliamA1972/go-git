@@ -140,7 +140,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 	}
 
 	if o.RecurseSubmodules != NoRecurseSubmodules {
-		return w.updateSubmodules(&SubmoduleUpdateOptions{
+		return w.updateSubmodules(ctx, &SubmoduleUpdateOptions{
 			RecurseSubmodules: o.RecurseSubmodules,
 			Auth:              o.Auth,
 		})
@@ -149,13 +149,13 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 	return nil
 }
 
-func (w *Worktree) updateSubmodules(o *SubmoduleUpdateOptions) error {
+func (w *Worktree) updateSubmodules(ctx context.Context, o *SubmoduleUpdateOptions) error {
 	s, err := w.Submodules()
 	if err != nil {
 		return err
 	}
 	o.Init = true
-	return s.Update(o)
+	return s.UpdateContext(ctx, o)
 }
 
 // Checkout switch branches or restore working tree files.
@@ -364,13 +364,10 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 
 func (w *Worktree) resetIndex(t *object.Tree, dirs []string, files []string) error {
 	idx, err := w.r.Storer.Index()
-	if len(dirs) > 0 {
-		idx.SkipUnless(dirs)
-	}
-
 	if err != nil {
 		return err
 	}
+
 	b := newIndexBuilder(idx)
 
 	changes, err := w.diffTreeWithStaging(t, true)
@@ -419,6 +416,11 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs []string, files []string) err
 	}
 
 	b.Write(idx)
+
+	if len(dirs) > 0 {
+		idx.SkipUnless(dirs)
+	}
+
 	return w.r.Storer.SetIndex(idx)
 }
 
@@ -1125,7 +1127,7 @@ func rmFileAndDirsIfEmpty(fs billy.Filesystem, name string) error {
 	dir := filepath.Dir(name)
 	for {
 		removed, err := removeDirIfEmpty(fs, dir)
-		if err != nil {
+		if err != nil && !os.IsNotExist(err) {
 			return err
 		}
 
